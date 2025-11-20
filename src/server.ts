@@ -33,10 +33,8 @@ async function startIndexing(tokenName: string, tokenAddr: string) {
 
   const currentBlock = await provider.getBlockNumber();
 
-  // Save initial state immediately 
   await updateToken(tokenAddr, 0n, true, BigInt(currentBlock), 0, "initial");
 
-  // Backfill in background
   setImmediate(async () => {
     try {
       const filterBuy = contract.filters.Buy();
@@ -125,15 +123,16 @@ async function updateToken(
 
 
 app.get("/latest", async (req, res) => {
-  const { name, address } = req.query;
-
+  // const { name, address } = req.query;
+  let address="0x83a5298f921cc42513f497cd9c4b6194e6e94444";
+  let name ="PET";
   if (!address || typeof address !== 'string' || !ethers.isAddress(address)) {
     return res.status(400).json({ error: "Invalid or missing address" });
   }
 
   const normalized = address.toLowerCase();
 
-  // Start indexing if not already (initial state saved quickly, backfill async)
+
   await startIndexing(name as string, address as string);
 
   const record = await getLatestState(normalized);
@@ -160,5 +159,5 @@ app.get("/latest", async (req, res) => {
 });
 
 app.listen(3001, () => {
-  console.log("four.meme Indexer API running → GET http://localhost:3001/latest?address=0x...");
+  console.log("four.meme Indexer API running → GET http://localhost:3001/latest");
 });
