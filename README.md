@@ -2,7 +2,10 @@
 
 ## Instructions:
 
-Use node 16
+Use node 16\
+\
+Install packages:\
+npm install
 
 Ensure postgresql in installed\
 **Start postgresql service:** sudo systemctl start postgresql (or  sudo service postgresql start)\
