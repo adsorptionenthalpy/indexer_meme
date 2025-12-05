@@ -18,7 +18,7 @@ const liveState = new Map<
   { supply: bigint; name: string; decimals: number; contract: ethers.Contract }
 >();
 
-async function startIndexing(tokenName: string, tokenAddr: string) {
+export async function startIndexing(tokenName: string, tokenAddr: string) {
   const addr = tokenAddr.toLowerCase();
   if (liveState.has(addr)) return;
 
@@ -30,8 +30,8 @@ async function startIndexing(tokenName: string, tokenAddr: string) {
 
   try {
     const reserves = await contract.getVirtualReserves();
-    supply = reserves.tokenReserve;                 //  supply?
-    decimals = Number(await contract.decimals());   
+    supply = reserves.tokenReserve;
+    decimals = Number(await contract.decimals());
     name = await contract.name().catch(() => name);
   } catch (err) {
     console.log(`Warning: Using fallback values for ${tokenAddr}`);
@@ -43,17 +43,13 @@ async function startIndexing(tokenName: string, tokenAddr: string) {
   await updateToken(tokenAddr, 0n, true, BigInt(currentBlock), 0, "genesis");
 
   // Real-time listeners
-contract.on("Buy", (buyer, amount, paid, ev) =>
-  updateToken(tokenAddr, amount, true, BigInt(ev.blockNumber), ev.index, ev.transactionHash)
-);
+  contract.on("Buy", (buyer, amount, paid, ev) =>
+    updateToken(tokenAddr, amount, true, BigInt(ev.blockNumber), ev.index, ev.transactionHash)
+  );
 
-contract.on("Sell", (seller, amount, received, ev) =>
-  updateToken(tokenAddr, amount, false, BigInt(ev.blockNumber), ev.index, ev.transactionHash)
-);
-
-contract.on("Trade", (trader, amount, isPurchase, ev) =>
-  updateToken(tokenAddr, amount, !!isPurchase, BigInt(ev.blockNumber), ev.index, ev.transactionHash)
-);
+  contract.on("Trade", (trader, amount, isPurchase, ev) =>
+    updateToken(tokenAddr, amount, !!isPurchase, BigInt(ev.blockNumber), ev.index, ev.transactionHash)
+  );
 
   console.log(`Now tracking ${name} (${tokenAddr}) — ${Number(supply)/10**decimals} tokens`);
 }
@@ -81,7 +77,6 @@ async function updateToken(
   const price = supplyNum * PRICE_SLOPE;
   const marketCap = price * supplyNum;
 
-  // Save the new state to DB
   await saveState({
     tokenName: state.name,
     tokenAddress: addr,
@@ -93,7 +88,6 @@ async function updateToken(
     txHash,
   });
 
-  // Real-time console log
   console.log(
     `${isBuy ? "BUY" : "SELL"} ${state.name} | ` +
     `Supply: ${(supplyNum / 1e6).toFixed(2)}M tokens | ` +
@@ -104,81 +98,76 @@ async function updateToken(
 }
 
 app.get("/latest", async (req, res) => {
-
   const address = "0x83a5298f921cc42513f497cd9c4b6194e6e94444";
   const name = "PET";
+
   try {
-  
-  
-  await startIndexing(name, address);
+    await startIndexing(name, address);
 
-  const record = await getLatestState(address.toLowerCase());
-  if (!record) {
-    return res.status(503).json({ error: "Indexing started – refresh in 5s" });
-  }
+    const record = await getLatestState(address.toLowerCase());
+    if (!record) {
+      return res.status(503).json({ error: "Indexing started – refresh in 5s" });
+    }
 
-  const decimals = liveState.get(address.toLowerCase())?.decimals || 18;
-  const supply = Number(record.supply) / (10 ** decimals);
-  const price = parseFloat(record.price);
-  const marketCap = parseFloat(record.marketCap);
+    const decimals = liveState.get(address.toLowerCase())?.decimals || 18;
+    const supply = Number(record.supply) / (10 ** decimals);
+    const price = parseFloat(record.price);
+    const marketCap = parseFloat(record.marketCap);
 
-  res.json({
-    token: record.tokenName,
-    address: address.toLowerCase(),
-    supply: Number(supply.toFixed(2)),
-    price,
-    marketCap,
-    priceUSD: Number((price * BNB_PRICE_USD).toFixed(6)),
-    marketCapUSD: Number((marketCap * BNB_PRICE_USD).toFixed(2)),
-    lastUpdated: record.timestamp.toISOString(),
-    blockNumber: record.blockNumber,
-  });
-
-} catch (error) {
+    res.json({
+      token: record.tokenName,
+      address: address.toLowerCase(),
+      supply: Number(supply.toFixed(2)),
+      price,
+      marketCap,
+      priceUSD: Number((price * BNB_PRICE_USD).toFixed(6)),
+      marketCapUSD: Number((marketCap * BNB_PRICE_USD).toFixed(2)),
+      lastUpdated: record.timestamp.toISOString(),
+      blockNumber: record.blockNumber.toString(),
+    });
+  } catch (error) {
+    console.error(error);
     return res.status(400).json({ error: 'Handled unknown error' });
   }
 });
 
 app.post("/latest", async (req, res) => {
-  const { name, address } = req.body; //JSON body
+  const { name, address } = req.body;
 
   if (!address || typeof address !== "string" || !ethers.isAddress(address)) {
     return res.status(400).json({ error: "Invalid or missing address" });
   }
 
   try {
+    await startIndexing(name || "Custom Token", address);
 
-  await startIndexing(name, address);
+    const record = await getLatestState(address.toLowerCase());
+    if (!record) return res.status(503).json({ error: "Indexing started – refresh in 5s" });
 
-  const record = await getLatestState(address.toLowerCase());
-  if (!record) return res.status(503).json({ error: "Indexing started – refresh in 5s" });
+    const decimals = liveState.get(address.toLowerCase())?.decimals || 18;
+    const supply = Number(record.supply) / (10 ** decimals);
+    const price = parseFloat(record.price);
+    const marketCap = parseFloat(record.marketCap);
 
-  const decimals = liveState.get(address.toLowerCase())?.decimals || 18;
-  const supply = Number(record.supply) / (10 ** decimals);
-  const price = parseFloat(record.price);
-  const marketCap = parseFloat(record.marketCap);
-
-  res.json({
-    token: record.tokenName,
-    address: address.toLowerCase(),
-    supply: Number(supply.toFixed(2)),
-    price,
-    marketCap,
-    priceUSD: Number((price * BNB_PRICE_USD).toFixed(6)),
-    marketCapUSD: Number((marketCap * BNB_PRICE_USD).toFixed(2)),
-    lastUpdated: record.timestamp.toISOString(),
-    blockNumber: record.blockNumber,
-  });
-
-} catch (error) {
+    res.json({
+      token: record.tokenName,
+      address: address.toLowerCase(),
+      supply: Number(supply.toFixed(2)),
+      price,
+      marketCap,
+      priceUSD: Number((price * BNB_PRICE_USD).toFixed(6)),
+      marketCapUSD: Number((marketCap * BNB_PRICE_USD).toFixed(2)),
+      lastUpdated: record.timestamp.toISOString(),
+      blockNumber: record.blockNumber.toString(),
+    });
+  } catch (error) {
+    console.error(error);
     return res.status(400).json({ error: 'Handled unknown error' });
   }
-
 });
 
-
 app.listen(3001, () => {
-  console.log("\nfour.meme Indexer READY");
+  console.log("\nfour.meme Indexer READY (JSON storage — no persistence on restart)");
   console.log("   → GET  http://localhost:3001/latest     (PET Token Test)");
   console.log("   → POST http://localhost:3001/latest     (JSON {name, address})\n");
 });
